@@ -1,18 +1,16 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-class Eventlistpage extends StatelessWidget {
+class Eventlistpage extends StatefulWidget {
+  @override
+  State<StatefulWidget> createState() => EventlistState();
+}
+
+class EventlistState extends State<Eventlistpage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Event List"),
-      ),
-      backgroundColor: Colors.blue,
-      body: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [Text("Event List")],
-      ),
+      body: Text("Event List"),
     );
   }
 }

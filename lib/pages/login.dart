@@ -8,37 +8,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class Login extends StatefulWidget {
   @override
   _LoginState createState() => _LoginState();
-}
-
-Future<LoginModel> login(String email, String password) async {
-  final response = await http.post(
-    Uri.parse(
-        'https://us-central1-uate2monair.cloudfunctions.net/e2monair-uat-get-auth-token'),
-    headers: <String, String>{
-      'Content-Type': 'application/json; charset=UTF-8',
-    },
-    body: jsonEncode(<String, String>{
-      'emailId': email,
-      'password': password,
-    }),
-  );
-
-  if (response.statusCode == 200) {
-    log(response.body.toString());
-
-    // If the server did return a 201 CREATED response,
-    // then parse the JSON.
-    //return Album.fromJson(jsonDecode(response.body));
-    return LoginModel.fromJson(jsonDecode(response.body));
-  } else {
-    // If the server did not return a 201 CREATED response,
-    // then throw an exception.
-    throw Exception('Failed to create Login.');
-  }
 }
 
 class LoginModel {
@@ -58,16 +33,50 @@ class _LoginState extends State<Login> {
 
   final TextEditingController _controller = TextEditingController();
   final TextEditingController _controller2 = TextEditingController();
-  Future<Login>? _logintask;
-  Future<LoginModel>? _loginresponse;
+  //Future<Login>? _logintask;
+  //Future<LoginModel>? _loginresponse;
+  final Future<SharedPreferences> _prefs = SharedPreferences.getInstance();
+  String customtoken = "";
 
   final htmlData = """
 <p><font color=#ffffff>By signing in , I Agree the </font> <b><a style="color: #de363a" href="https://e2m.live/terms-of-use">Terms of Conditions</a></b> <font color=#ffffff> and <u></font> <b><a style="color: #de363a" href="https://e2m.live/privacy-policy">Privacy Policy</a></b>
 """;
+  FirebaseAuth auth = FirebaseAuth.instance;
+
   void updateStatus() {
     setState(() {
       _isVisible = !_isVisible;
     });
+  }
+
+  Future<LoginModel> login(String email, String password) async {
+    final SharedPreferences prefs = await _prefs as SharedPreferences;
+    final response = await http.post(
+      Uri.parse(
+          'https://us-central1-uate2monair.cloudfunctions.net/e2monair-uat-get-auth-token'),
+      headers: <String, String>{
+        'Content-Type': 'application/json; charset=UTF-8',
+      },
+      body: jsonEncode(<String, String>{
+        'emailId': email,
+        'password': password,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      //log(response.body.toString());
+
+      // If the server did return a 201 CREATED response,
+      // then parse the JSON.
+      //return Album.fromJson(jsonDecode(response.body));
+      Map<String, dynamic> json = jsonDecode(response.body);
+      prefs.setString("LOGGED_IN_CUSTOM_TOKEN", json['customToken']);
+      return LoginModel.fromJson(jsonDecode(response.body));
+    } else {
+      // If the server did not return a 201 CREATED response,
+      // then throw an exception.
+      throw Exception('Failed to create Login.');
+    }
   }
 
   _launchURLBrowser(String url) async {
@@ -79,11 +88,17 @@ class _LoginState extends State<Login> {
     }
   }
 
-  void onlogin() {
-    setState(() {
-      if (_loginresponse != null) {
-        Navigator.pushNamed(context, '/evenlist');
-      }
+  setFirebaseAuth() async {
+    final SharedPreferences prefs = await _prefs as SharedPreferences;
+
+    log(prefs.getString("LOGGED_IN_CUSTOM_TOKEN").toString());
+    String token = prefs.getString("LOGGED_IN_CUSTOM_TOKEN").toString();
+
+    auth.signInWithCustomToken(token).then((value) {
+      auth.currentUser?.getIdToken(true).then((value) {
+        log("getIdToken:" + value.toString());
+        prefs.setString("FIREBASE_AUTH_TOKEN", value);
+      });
     });
   }
 
@@ -151,7 +166,7 @@ class _LoginState extends State<Login> {
                 Padding(
                   padding: EdgeInsets.only(top: 10),
                   child: TextFormField(
-                    obscureText: _isVisible ? true : false,
+                    obscureText: _isVisible ? false : true,
                     cursorColor: Colors.white,
                     controller: _controller2,
                     textInputAction: TextInputAction.done,
@@ -188,15 +203,53 @@ class _LoginState extends State<Login> {
                             style:
                                 ElevatedButton.styleFrom(primary: Colors.red),
                             onPressed: () {
-                              login(_controller.text, _controller2.text).then(
-                                  (value) => Navigator.pushNamed(
-                                      context, '/evenlist'));
+                              setState(() {
+                                _isLoading = true;
+                              });
+                              login(_controller.text, _controller2.text)
+                                  .then((value) {
+                                setState(() {
+                                  _isLoading = false;
+                                });
+                                if (value.status == 0) {
+                                  setFirebaseAuth();
+                                  Navigator.pushNamed(context, '/evenlist');
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                          content: Text(
+                                              "Your login or password was incorrect. Please try again or click here to reset your password")));
+                                }
+                              });
                             },
-                            child: Text(
-                              "Login",
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 15),
-                            )))),
+                            child: (_isLoading)
+                                ? Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        "Login",
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 15),
+                                      ),
+                                      SizedBox(
+                                        width: 5,
+                                      ),
+                                      SizedBox(
+                                        height: 20,
+                                        width: 20,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    ],
+                                  )
+                                : Text(
+                                    "Login",
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15),
+                                  )))),
                 Padding(
                     padding: EdgeInsets.only(top: 20),
                     child: Html(
@@ -206,40 +259,5 @@ class _LoginState extends State<Login> {
                     ))
               ],
             ))));
-  }
-
-  Column buildColumn() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: <Widget>[
-        TextField(
-          controller: _controller,
-          decoration: const InputDecoration(hintText: 'Enter Title'),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            setState(() {
-              //_futureAlbum = createAlbum(_controller.text);
-            });
-          },
-          child: const Text('Create Data'),
-        ),
-      ],
-    );
-  }
-
-  FutureBuilder<LoginModel> buildFutureBuilder() {
-    return FutureBuilder<LoginModel>(
-      future: _loginresponse,
-      builder: (context, snapshot) {
-        if (snapshot.hasData) {
-          return Text(snapshot.data!.customtoken);
-        } else if (snapshot.hasError) {
-          return Text('${snapshot.error}');
-        }
-
-        return const CircularProgressIndicator();
-      },
-    );
   }
 }
